@@ -1,0 +1,118 @@
+---
+title: "Biogeography_Project"
+author: "Devin Richards"
+date: "2024-12-02"
+output: html_document
+---
+### Required packages & Directory:
+```{r, warning=FALSE, message=FALSE}
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(rmapshaper)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(classInt)
+library(gridExtra)
+library(eHOF)
+setwd("D:\\Biogeography\\Data Files")
+```
+### Sourced Data Files:
+```{r, results='hide'}
+ecoregions <- st_read("D:\\Biogeography\\Data Files\\na_cec_eco_l2")
+iv_data <- readRDS("D:\\Biogeography\\Data Files\\df_master.rds")
+```
+### First step is to isolate the Appalachia ecoregion from all of North America
+```{r}
+head(ecoregions)
+head(unique(ecoregions$NA_L2NAME))
+appalachia <- ecoregions %>%
+  filter(NA_L2NAME == "OZARK/OUACHITA-APPALACHIAN FORESTS")
+head(appalachia)
+```
+### There is a problem with the ecoregion file, the regions are polygons & projected via Lambert Azimuthal Equal Area. We need to project them as WGS 1984, and extract Lat + Lon data.
+```{r}
+# Creating Lat & Lon coordinates for the Appalachia only:
+appalachia_wgs84 <- st_transform(appalachia, crs = 4326)
+appalachia_cords <- st_coordinates(appalachia_wgs84)
+app_cords_df <- as.data.frame(appalachia_cords)
+colnames(app_cords_df) <- c("X", "Y")
+head(app_cords_df)
+```
+### Now I can plot the Appalachia region over the base map of our 31 states in the FIA database.
+```{r}
+# Adding eastern US states shape file for background
+usa <- ne_states(country = "United States of America", returnclass = "sf")
+usa31 <- usa %>%
+  filter(longitude >= -95 & longitude <= -65)
+
+ggplot() +
+  geom_sf(data = usa31, fill = "lightblue", color = "black") +
+  geom_point(data = app_cords_df, aes(x = X, y = Y, color = "red"), size = 0.5)
+```
+### Next, I want to create a function to plot a specific tree species over its latitudinal extent and symbolizing it with points. The symbolized points will be normalized jenks of that trees IV.
+### This is what I am currently working on: Below is the code from class that results in a graph of IV over latitude.
+```{r, results='hide'}
+red_maple_data <- iv_data %>%
+  filter(common_name == "red maple")
+head(red_maple_data)
+min(red_maple_data$LAT)
+max(red_maple_data$LAT)
+
+# Create new empty data frame, to average IV to each 1 degree latitudinal band
+lat_seq <- seq(from = floor(min(red_maple_data$LAT)), to = ceiling(max(red_maple_data$LAT)), by = 0.5)
+lat_seq
+red_maple_bands <- data.frame(
+  Lat_band = lat_seq,
+  avg_IV = numeric(length(lat_seq)))
+head(red_maple_bands)
+
+test <- red_maple_data %>%
+  filter(LAT >= 30 & LAT <= 35) %>%
+  mutate(avg_IV = mean(IV, na.rm = TRUE))
+head(test)
+
+lat_seq
+for (i in 1:length(lat_seq)) {
+  lat_min <- lat_seq[i] - 0.5
+  lat_max <- lat_seq[i] + 0.5
+  band_data <- red_maple_data %>%
+    filter(LAT >= lat_min & LAT <= lat_max)
+  red_maple_bands$avg_IV[i] <- mean(band_data$IV, na.rm = TRUE)
+}
+head(red_maple_bands)
+tail(red_maple_bands)
+red_maple_bands <- red_maple_bands[-1,]
+
+hof_model <- HOF(
+  red_maple_bands$avg_IV,
+  red_maple_bands$Lat_band,
+  modeltypes = c("I","II","III","IV","V"),
+  family = gaussian,
+  bootstrap = 100,
+  test = 'AIC'
+)
+hof_model
+best_model <- pick.model(hof_model, modeltypes = c("I","II","III","IV","V"), test = 'AIC')
+best_model
+predicted_response <- predict(hof_model, model = best_model,
+                              newdata = seq(min(red_maple_bands$Lat_band), max(red_maple_bands$Lat_band), by = 0.1))
+predicted_response
+
+seq(min(red_maple_bands$Lat_band), max(red_maple_bands$Lat_band), by = 0.1)
+
+scaled_response <- predicted_response * max(red_maple_bands$avg_IV)
+scaled_response
+```
+```{r}
+ggplot(red_maple_bands, aes(x = Lat_band, y = avg_IV)) +
+  geom_point(color = "black") +
+  geom_line(data = data.frame(lat_band = seq(min(red_maple_bands$Lat_band), max(red_maple_bands$Lat_band), by = 0.1),
+                              predicted_IV = scaled_response),
+            aes(x = lat_band, y = predicted_IV), color = "purple") +
+  geom_vline(xintercept = Para(hof_model, model = best_model)$opt, color = 'red', linetype = "dashed") +
+  labs(title = "Latitudinal IV pattern for Red Maple", x = "Latitude", y = "IV (Importance Value)")
+
+Para(hof_model, model = best_model)$opt
+```
