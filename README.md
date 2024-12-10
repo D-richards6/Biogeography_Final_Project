@@ -70,4 +70,5 @@ ggplot() +
   geom_point(data = species_rich_class, aes(x = LON, y = LAT, color = JenksClass), size = 2) +
   scale_color_manual(values = c("#ffffb2","#fed976","#feb24c","#fd8d3c","#f03b20","#bd0026"), name = "Species Richness")+
   geom_point(data = fin_appalachia, aes(x = LON, y = LAT), size = 0.5, color = "blue")
+![Appalachia Species Richness](Images/Appalachia Species Richness.png)
 ```
