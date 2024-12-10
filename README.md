@@ -1,3 +1,7 @@
+# Introduction:
+The goal of this project is to investigate the well documented Rapoport Effect, but on a smaller scale of observation than is typical. I am very curious if within a specific ecoregion of the US the rapoport effect can be observed. The ecoregion I choose for this project is the Appalachia Province, which is well know for its abundant biological diversity.
+There is an abundance of tree species found within the Appalachia Province, and the fact that it is geographically centered in the Eastern United States leads me to believe many tree species midpoints will fall within this area. For those factors I wanted to investigate how present the Rapoport Effect may be in this biological hotspot.
+
 ### Required packages:
 ```{r, warning=FALSE, message=FALSE}
 library(sf)
@@ -14,6 +18,9 @@ library(devtools)
 library(rnaturalearthhires)
 ```
 ### Where the data is being sourced from and the original files before augmentation:
+All of the tree characterstic data such as species richness and latitudinal range are sourced from the FIA data base.
+The shape & extent of my target ecoregion was sourced from the Environmental Protection Agency. (https://www.epa.gov/eco-research/ecoregions-north-america)
+The ecoregion data is level 2, which is detailed enough to isolate Appalachia but not so detailed to break it into subregions.
 ```{r}
 setwd("D:\\Biogeography\\Data Files")
 ecoregions <- st_read("D:\\Biogeography\\Data Files\\Ecoregions")
@@ -23,6 +30,9 @@ iv_data <- readRDS("D:\\Biogeography\\Data Files\\df_master.rds")
 iv_sf <- st_as_sf(iv_data, coords = c("LON","LAT"), crs = 4326)
 ```
 ### Manipulating the ecoregion data to display a target region (Appalachia):
+This step proved to be critical to the success of the project. The ecoregion data are shapefiles with the regions themselves expressed as polygons.
+The FIA database is a projected coordinate system in Latitude & Longitude. Significant resources and time were devoted to projected the ecoregion data, extracting Lat & Lon,
+and finally making a structured data frame.
 ```{r}
 appalachia <- ecoregions %>%
   filter(NA_L2NAME == "OZARK/OUACHITA-APPALACHIAN FORESTS")
@@ -149,3 +159,60 @@ tree_list <- unique(na.omit(tree$COMMON_NAME))
 species_midpoints_list <- lapply(tree_list, function(species) find_midpoint(species, fia_data))
 midpoints_df <- bind_rows(species_midpoints_list)
 print(midpoints_df)
+```
+|Species | LAT_midpoint | LON_midpoint | Rapoport_Index |
+|--------|--------------|--------------|----------------|
+| boxelder | 38.80832 | -82.46690 | 1.3137777 |
+| baldcypress | 32.81618 | -84.85485 | 1.0658709 |
+| American Sycamore | 36.64056 | -84.26546 | 1.1652512 |
+| American Elm | 38.16106 | -82.17432 | 1.3228237 |
+| red maple | 34.24173 | -81.38487 | 1.3042623 |
+```{r}
+rap_all <- classIntervals(midpoints_df$Rapoport_Index, n = 5, style = "jenks")
+rap_all_class <- midpoints_df %>%
+  mutate(JenksClass = cut(Rapoport_Index, breaks = rap_all$brks, labels = 1:5, include.lowest = TRUE))
+
+ggplot() +
+  geom_point(data = iv_data, aes(x = LON, y = LAT), size = 1, color = "lightblue") +
+  geom_point(data = rap_all_class, aes(x = LON_midpoint, y = LAT_midpoint, color = JenksClass), size = 2) +
+  geom_point(data = fin_appalachia, aes(x = LON, y = LAT), size = 0.5, color = "red") +
+  scale_color_manual(values = c("#ffffb2","#fed976","#feb24c","#fd8d3c","#f03b20","#bd0026"), name = "Rapoport Index") +
+  labs(title = "Eastern US Rapoport Index",
+       x = "Longitude",
+       y = "Latitude")
+```
+![Eastern US Big map](https://github.com/user-attachments/assets/bc812105-5e6f-495b-b001-a4e3064d79b5)
+
+# Final Map
+### Now that the Rapoport Index is calculated and I have isolated my study area to just the Appalachia Province, I can map them together:
+```{r}
+usa <- ne_states(country = "United States of America", returnclass = "sf")
+usa31 <- usa %>%
+  filter(longitude >= -95 & longitude <= -65)
+
+usa31_sf <- st_as_sf(usa31, coords = c("longitude","latitude"), crs = 4326)
+states_bbox <- st_crop(usa31_sf, bbox)
+
+ggplot()+
+  geom_sf(data = states_bbox, fill = "lightblue", color = "black") +
+  geom_point(data = fin_appalachia, aes(x = LON, y = LAT), size = 0.5, color = "#006d2c") +
+  geom_point(data = rap_classes, aes(x = LON_midpoint, y = LAT_midpoint, color = JenksClass), size = 2) +
+  scale_color_manual(values = c("#ffffb2","#fed976","#feb24c","#fd8d3c","#f03b20","#bd0026"), name = "Rapoport Index") +
+  labs(title = "Appalachia Province & Rapoport Effect",
+       x = "Longitude",
+       y = "Latitude")
+```
+![Area_wRapoport](https://github.com/user-attachments/assets/be72f9da-a836-440d-bc9e-9d2a9cc525e7)
+
+# Extra
+### I've also added the graph of Latitudinal Midpoint compared to Rapoport Index:
+``` {r}
+ggplot(midpoints_df, aes(x = LAT_midpoint, y = Rapoport_Index)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Rapoport Effect",
+       x = "Midpoint Latitude",
+       y = "Rapoport Index") +
+  theme_minimal()
+```
+![Rapoport Effect](https://github.com/user-attachments/assets/86fd4de5-5129-4d32-b648-5c0d2c3b658a)
